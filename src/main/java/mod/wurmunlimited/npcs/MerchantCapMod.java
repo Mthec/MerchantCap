@@ -1,5 +1,7 @@
 package mod.wurmunlimited.npcs;
 
+import com.wurmonline.server.TimeConstants;
+import com.wurmonline.server.WurmCalendar;
 import com.wurmonline.server.behaviours.CapAction;
 import com.wurmonline.server.behaviours.ClearHistoryAction;
 import com.wurmonline.server.creatures.Creature;
@@ -12,6 +14,7 @@ import com.wurmonline.shared.exceptions.WurmException;
 import javassist.NotFoundException;
 import org.gotti.wurmunlimited.modloader.ReflectionUtil;
 import org.gotti.wurmunlimited.modloader.classhooks.HookManager;
+import org.gotti.wurmunlimited.modloader.interfaces.Configurable;
 import org.gotti.wurmunlimited.modloader.interfaces.Initable;
 import org.gotti.wurmunlimited.modloader.interfaces.ServerStartedListener;
 import org.gotti.wurmunlimited.modloader.interfaces.WurmServerMod;
@@ -20,17 +23,56 @@ import org.gotti.wurmunlimited.modsupport.actions.ModActions;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.sql.SQLException;
+import java.util.Properties;
 import java.util.logging.Logger;
 
-public class MerchantCapMod implements WurmServerMod, Initable, ServerStartedListener {
+public class MerchantCapMod implements WurmServerMod, Configurable, Initable, ServerStartedListener {
     private static final Logger logger = Logger.getLogger(MerchantCapMod.class.getName());
+    static HistoryClearPolicy historyClearPolicy = HistoryClearPolicy.never;
+
+    enum HistoryClearPolicy {
+        never,
+        daily,
+        weekly,
+        monthly,
+        yearly;
+
+        public boolean isTimeToClear(long lastHistoryClear) {
+            long time = WurmCalendar.currentTime;
+            switch (this) {
+                case daily:
+                    return time - lastHistoryClear >= TimeConstants.DAY;
+                case weekly:
+                    return time - lastHistoryClear >= TimeConstants.WEEK;
+                case monthly:
+                    return time - lastHistoryClear >= TimeConstants.MONTH;
+                case yearly:
+                    return time - lastHistoryClear >= TimeConstants.YEAR;
+                default:
+                case never:
+                    return false;
+            }
+        }
+    }
+
+    @Override
+    public void configure(Properties properties) {
+        String val = properties.getProperty("clear_history");
+        if (val != null && val.length() > 0) {
+            try {
+                historyClearPolicy = HistoryClearPolicy.valueOf(val);
+            } catch (IllegalArgumentException e) {
+                logger.warning("Invalid option for clear_history.");
+            }
+        }
+    }
 
     public static class MerchantCapDatabaseException extends WurmException {
-
         MerchantCapDatabaseException(String message, Throwable cause) {
             super(message, cause);
         }
     }
+
     public static void setCapFor(Creature merchant, long cap) throws MerchantCapDatabaseException {
         try {
             MerchantCapDatabase.setCapFor(merchant, cap);

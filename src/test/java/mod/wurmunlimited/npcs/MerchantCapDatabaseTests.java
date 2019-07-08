@@ -1,5 +1,7 @@
 package mod.wurmunlimited.npcs;
 
+import com.wurmonline.server.TimeConstants;
+import com.wurmonline.server.WurmCalendar;
 import com.wurmonline.server.creatures.Creature;
 import com.wurmonline.server.creatures.CreatureTemplateIds;
 import mod.wurmunlimited.WurmObjectsFactory;
@@ -123,5 +125,51 @@ class MerchantCapDatabaseTests extends DatabaseTest {
 
         assertTrue(rs.next());
         assertFalse(rs.getBoolean(1));
+    }
+
+    @Test
+    void testClearHistoryOnDailySchedule() throws MerchantCapMod.MerchantCapDatabaseException, SQLException {
+        Creature merchant = factory.createNewCreature(CreatureTemplateIds.SALESMAN_CID);
+        Creature player1 = factory.createNewPlayer();
+        Creature player2 = factory.createNewPlayer();
+        MerchantCapMod.historyClearPolicy = MerchantCapMod.HistoryClearPolicy.daily;
+
+        PreparedStatement ps;
+        ResultSet rs;
+
+        for (int i = 0; i < 24; i++) {
+            db.close();
+            MerchantCapMod.addToPlayerSpent(player1, merchant, 10);
+            MerchantCapMod.addToPlayerSpent(player2, merchant, 10);
+
+            db = DriverManager.getConnection(MerchantCapDatabase.dbString);
+            ps = db.prepareStatement("SELECT SUM(spent) FROM player_spending WHERE merchantid=?");
+            ps.setLong(1, merchant.getWurmId());
+            rs = ps.executeQuery();
+
+            assertTrue(rs.next());
+            assertEquals((i + 1) * 20, rs.getInt(1));
+
+            WurmCalendar.currentTime += 60 * 60;
+        }
+
+        assert MerchantCapMod.historyClearPolicy.isTimeToClear(0);
+        db.close();
+        MerchantCapMod.getPlayerSpent(player1, merchant);
+
+        db = DriverManager.getConnection(MerchantCapDatabase.dbString);
+        // Should all be gone.
+        ps = db.prepareStatement("SELECT COUNT(*) FROM player_spending WHERE merchantid=?");
+        ps.setLong(1, merchant.getWurmId());
+        rs = ps.executeQuery();
+
+        assertTrue(rs.next());
+        assertEquals(0, rs.getInt(1));
+
+        ps = db.prepareStatement("SELECT * FROM history_clear");
+        rs = ps.executeQuery();
+
+        assertTrue(rs.next());
+        assertEquals(TimeConstants.DAY, rs.getLong(1));
     }
 }

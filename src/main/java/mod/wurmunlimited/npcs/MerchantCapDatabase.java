@@ -1,5 +1,6 @@
 package mod.wurmunlimited.npcs;
 
+import com.wurmonline.server.WurmCalendar;
 import com.wurmonline.server.creatures.Creature;
 
 import java.sql.*;
@@ -10,6 +11,7 @@ class MerchantCapDatabase {
     private static final Logger logger = Logger.getLogger(MerchantCapDatabase.class.getName());
     static String dbString = "jdbc:sqlite:merchantcap.db";
     private static boolean created = false;
+    private static long lastHistoryClear;
 
     private interface Execute {
 
@@ -49,7 +51,23 @@ class MerchantCapDatabase {
         }
     }
 
+    private static void checkClearTime() throws SQLException {
+        if (MerchantCapMod.historyClearPolicy.isTimeToClear(lastHistoryClear)) {
+            execute(conn -> {
+                PreparedStatement ps = conn.prepareStatement("DELETE FROM player_spending");
+                ps.execute();
+
+                lastHistoryClear = WurmCalendar.getCurrentTime();
+
+                ps = conn.prepareStatement("UPDATE history_clear SET timestamp=?");
+                ps.setLong(1, lastHistoryClear);
+                ps.execute();
+            });
+        }
+    }
+
     static long getPlayerSpent(Creature player, Creature merchant) throws SQLException {
+        checkClearTime();
         AtomicLong spent = new AtomicLong(0L);
 
         execute(conn -> {
@@ -67,6 +85,7 @@ class MerchantCapDatabase {
     }
 
     static void setPlayerSpent(Creature player, Creature merchant, long spent) throws SQLException {
+        checkClearTime();
         execute(conn -> {
             PreparedStatement ps = conn.prepareStatement("INSERT OR IGNORE INTO player_spending (playerid, merchantid) VALUES(?, ?)");
             ps.setLong(1, player.getWurmId());
@@ -113,14 +132,27 @@ class MerchantCapDatabase {
                                                                   "id INTEGER UNIQUE," +
                                                                   "cap INTEGER" +
                                                                   ");");
-        PreparedStatement ps2 = conn.prepareStatement("CREATE TABLE IF NOT EXISTS player_spending (" +
+        ps.execute();
+        ps = conn.prepareStatement("CREATE TABLE IF NOT EXISTS player_spending (" +
                                                                   "playerid INTEGER," +
                                                                   "merchantid INTEGER," +
                                                                   "spent INTEGER NOT NULL DEFAULT 0," +
                                                                   "UNIQUE(playerid, merchantid) ON CONFLICT REPLACE" +
                                                                   ");");
         ps.execute();
-        ps2.execute();
+        ps = conn.prepareStatement("CREATE TABLE IF NOT EXISTS history_clear (" +
+                                                              "timestamp INTEGER" +
+                                                              ");");
+        ps.execute();
+        ps = conn.prepareStatement("INSERT OR IGNORE INTO history_clear VALUES(?)");
+        ps.setLong(1, WurmCalendar.getCurrentTime());
+        ps.execute();
+
+        ps = conn.prepareStatement("SELECT * FROM history_clear");
+        ResultSet rs = ps.executeQuery();
+        if (rs.next())
+            lastHistoryClear = rs.getLong(1);
+
         created = true;
     }
 }
