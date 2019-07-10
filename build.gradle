@@ -3,7 +3,7 @@ plugins {
     id 'idea'
 }
 
-version = '0.5.1-beta'
+version = '0.5.2-beta'
 
 sourceCompatibility = 1.8
 def $shortName = 'merchantcap'
@@ -28,6 +28,10 @@ jar {
             from 'src/main/resources/' + $shortName + '.properties'
             into 'E:/Steam/steamapps/common/Wurm Unlimited/WurmServerLauncher/mods/'
         }
+    }
+
+    from {
+        configurations.runtimeClasspath.findAll { it.name.startsWith("BMLBuilder") && it.name.endsWith('jar') }.collect { zipTree(it) }
     }
 
     includeEmptyDirs false
